@@ -1,0 +1,5 @@
+pretrained_models/*
+*.h5ad
+data/*
+*.out
+*.err
