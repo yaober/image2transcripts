@@ -6,42 +6,56 @@ from tqdm import tqdm
 import csv
 import argparse
 from skimage.segmentation import find_boundaries
+from skimage.measure import regionprops
 import matplotlib.pyplot as plt
-from multiprocessing import Pool, cpu_count
 
 # Increase PIL's pixel limit
 Image.MAX_IMAGE_PIXELS = None
 
-def get_neighbors(mask, cell_id, max_neighbors=10):
-    cell_mask = (mask == cell_id)
-    dilated = np.zeros_like(cell_mask)
-    dilated[1:, :] |= cell_mask[:-1, :]
-    dilated[:-1, :] |= cell_mask[1:, :]
-    dilated[:, 1:] |= cell_mask[:, :-1]
-    dilated[:, :-1] |= cell_mask[:, 1:]
-    neighbor_ids = np.unique(mask[dilated & ~cell_mask])
-    return [nid for nid in neighbor_ids if nid != 0 and nid != cell_id][:max_neighbors]
+def get_neighbors(props, cell_id, cell_masks, max_neighbors=10):
+    # Get the bounding box of the current cell
+    min_row, min_col, max_row, max_col = props[cell_id].bbox
+    # Pad the bounding box by 1 pixel
+    min_row, min_col = max(0, min_row - 1), max(0, min_col - 1)
+    max_row, max_col = min(cell_masks.shape[0], max_row + 1), min(cell_masks.shape[1], max_col + 1)
+    # Get the unique labels in the padded region, excluding 0 and the current cell_id
+    neighbor_ids = np.unique(cell_masks[min_row:max_row, min_col:max_col])
+    neighbor_ids = [nid for nid in neighbor_ids if nid != 0 and nid != cell_id]
+    return neighbor_ids[:max_neighbors]
 
-def process_cell(args):
-    cell_id, cell_masks, wsi_width, wsi_height, whole_slide_image, output_dir, cell_count, plot_mask = args
+def process_cell(cell_id, props, cell_masks, wsi_width, wsi_height, whole_slide_image, output_dir, cell_count, plot_mask):
+    # Get current cell properties and neighbor cells
+    cell_prop = props[cell_id]
+    neighbor_ids = get_neighbors(props, cell_id, cell_masks, max_neighbors=cell_count)
     
-    # Get current cell mask and neighbor cells
-    cell_mask = (cell_masks == cell_id)
-    neighbor_ids = get_neighbors(cell_masks, cell_id, max_neighbors=cell_count)
-    # Create extended mask including neighbors
-    extended_mask = cell_mask.copy()
+    # Get bounding box for current cell and its neighbors
+    min_row, min_col, max_row, max_col = cell_prop.bbox
     for nid in neighbor_ids:
-        extended_mask |= (cell_masks == nid)
-    # Find the bounding box of the extended mask
-    rows, cols = np.where(extended_mask)
-    if len(rows) == 0 or len(cols) == 0:
-        return cell_id, neighbor_ids, None # Skip empty masks
-    top, bottom, left, right = rows.min(), rows.max(), cols.min(), cols.max()
+        n_min_row, n_min_col, n_max_row, n_max_col = props[nid].bbox
+        min_row, min_col = min(min_row, n_min_row), min(min_col, n_min_col)
+        max_row, max_col = max(max_row, n_max_row), max(max_col, n_max_col)
+    
     # Ensure boundaries are within the image
-    top, bottom = max(0, top), min(wsi_height-1, bottom)
-    left, right = max(0, left), min(wsi_width-1, right)
+    top, bottom = max(0, min_row), min(wsi_height-1, max_row)
+    left, right = max(0, min_col), min(wsi_width-1, max_col)
+    #debug
+    if left >= right or top >= bottom:
+        print(f"Warning: Invalid crop coordinates for cell {cell_id}.")
+        print(f"Coordinates: top={top}, bottom={bottom}, left={left}, right={right}")
+        print(f"Original bbox: {props[cell_id].bbox}")
+        print(f"Image dimensions: {wsi_width}x{wsi_height}")
+        return cell_id, neighbor_ids, None
+    # Check if the coordinates are valid for cropping
+    if left >= right or top >= bottom:
+        print(f"Warning: Invalid crop coordinates for cell {cell_id}. Skipping this cell.")
+        return cell_id, neighbor_ids, None
+    
     # Crop the corresponding area from the whole slide image
-    cell_image = np.array(whole_slide_image.crop((left, top, right+1, bottom+1)))
+    try:
+        cell_image = np.array(whole_slide_image.crop((left, top, right+1, bottom+1)))
+    except ValueError as e:
+        print(f"Error cropping image for cell {cell_id}: {str(e)}")
+        return cell_id, neighbor_ids, None
     
     if plot_mask:
         # Create a color mask for visualization
@@ -65,51 +79,43 @@ def process_cell(args):
     return cell_id, neighbor_ids, True
 
 def process_cells(wsi_path, zarr_path, output_dir, cell_count=10, plot_mask=False):
-    # 1. Read the zarr file
     print('Starting cell extraction process...')
     print(f"Loading zarr file from {zarr_path}...")
     cells = zarr.open(zarr_path, mode='r')
     print(f"Loaded zarr file from {zarr_path}.")
-    # 2. Read the whole slide image
+    
     print(f"Loading whole slide image from {wsi_path}...")
     whole_slide_image = Image.open(wsi_path)
     print(f"Loaded whole slide image from {wsi_path}.")
 
-    # 3. Cut out the HE image corresponding to each cell
-    # Get cell mask
-    cell_masks = cells['masks'][1][:] # index 1 corresponds to cell segmentation mask
+    cell_masks = cells['masks'][1][:]  # index 1 corresponds to cell segmentation mask
     if cell_masks.ndim != 2:
         raise ValueError(f"Expected cell_masks to be 2D, but got {cell_masks.ndim}D")
     
-    # Create output directory
     os.makedirs(output_dir, exist_ok=True)
-    # Get the dimensions of the whole slide image
     wsi_width, wsi_height = whole_slide_image.size
-    # Get unique cell ids (excluding background, which is usually 0)
-    unique_cell_ids = np.unique(cell_masks)
-    unique_cell_ids = unique_cell_ids[unique_cell_ids != 0]
     
-    # Prepare CSV file
+    print("Computing region properties...")
+    props = regionprops(cell_masks)
+    props = {p.label: p for p in props}  # Convert to dictionary for faster lookup
+    
     csv_file = open(os.path.join(output_dir, 'cell_neighbors.csv'), 'w', newline='')
     csv_writer = csv.writer(csv_file)
     csv_writer.writerow(['cell_id', 'neighbor_ids'])
-
-    # Multiprocessing pool
-    pool = Pool(cpu_count())
-    tasks = [(cell_id, cell_masks, wsi_width, wsi_height, whole_slide_image, output_dir, cell_count, plot_mask) for cell_id in unique_cell_ids]
-    
-    for result in tqdm(pool.imap_unordered(process_cell, tasks), total=len(tasks), desc="Processing cells"):
+    #debug
+    error_count = 0
+    for cell_id in tqdm(props.keys(), desc="Processing cells"):
+        result = process_cell(cell_id, props, cell_masks, wsi_width, wsi_height, whole_slide_image, output_dir, cell_count, plot_mask)
         cell_id, neighbor_ids, success = result
         if success:
             csv_writer.writerow([cell_id, ','.join(map(str, neighbor_ids))])
             csv_file.flush()  # Ensure data is written to file
-    
-    pool.close()
-    pool.join()
+        else:
+            error_count += 1
 
-    # Close CSV file
     csv_file.close()
     print(f"All cell images have been saved and neighbor information has been written to {os.path.join(output_dir, 'cell_neighbors.csv')}.")
+    print(f"Number of cells with errors: {error_count}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process WSI and zarr files to extract cell images and neighbors.")
