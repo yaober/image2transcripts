@@ -13,6 +13,8 @@ from torch.utils.data import random_split
 from tqdm import tqdm
 import os
 
+os.environ['CUDA_LAUNCH_BLOCKING'] = '1'
+
 # %%
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
