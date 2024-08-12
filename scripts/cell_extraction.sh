@@ -16,8 +16,15 @@
 
 module load python/3.8.x-anaconda
 conda activate image2transcripts
-cd /archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript
+cd /archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript/scripts
 python cell_extraction.py --wsi ../data/Xenium/breast_cancer_rep1/Xenium_FFPE_Human_Breast_Cancer_Rep1_he_image.tiff --mask ../data/Xenium/breast_cancer_rep1/outs/cells.zarr.zip --output ../data/xenium_brca_rep1_0_padding --cell_count 0
 python cell_extraction.py --wsi ../data/Xenium/breast_cancer_rep1/Xenium_FFPE_Human_Breast_Cancer_Rep1_he_image.tiff --mask ../data/Xenium/breast_cancer_rep1/outs/cells.zarr.zip --output ../data/xenium_brca_rep1_10_padding --cell_count 10
 python cell_extraction.py --wsi ../data/Xenium/breast_cancer_rep2/Xenium_FFPE_Human_Breast_Cancer_Rep2_he_image.tif --mask ../data/Xenium/breast_cancer_rep2/outs/cells.zarr.zip --output ../data/xenium_brca_rep2_0_padding --cell_count 0
 python cell_extraction.py --wsi ../data/Xenium/breast_cancer_rep2/Xenium_FFPE_Human_Breast_Cancer_Rep2_he_image.tif --mask ../data/Xenium/breast_cancer_rep2/outs/cells.zarr.zip --output ../data/xenium_brca_rep2_10_padding --cell_count 10
+python cell_extraction.py --wsi ../data/Xenium/breast_cancer_sample2/Xenium_V1_FFPE_Preview_Human_Breast_Cancer_Sample_2_he_image.ome.tif --mask ../data/Xenium/breast_cancer_sample2/cells.zarr.zip --output ../data/xenium_brca_sample2_0_padding --cell_count 0
+python cell_extraction.py --wsi ../data/Xenium/breast_cancer_sample2/Xenium_V1_FFPE_Preview_Human_Breast_Cancer_Sample_2_he_image.ome.tif --mask ../data/Xenium/breast_cancer_sample2/cells.zarr.zip --output ../data/xenium_brca_sample2_10_padding --cell_count 10
+python cell_extraction.py --wsi ../data/Xenium/lung_cancer_sample1/Xenium_V1_Human_Lung_Cancer_Addon_FFPE_he_image.ome.tif --mask ../data/Xenium/lung_cancer_sample1/cells.zarr.zip --output ../data/xenium_lung_sample1_0_padding --cell_count 0
+python cell_extraction.py --wsi ../data/Xenium/lung_cancer_sample1/Xenium_V1_Human_Lung_Cancer_Addon_FFPE_he_image.ome.tif --mask ../data/Xenium/lung_cancer_sample1/cells.zarr.zip --output ../data/xenium_lung_sample1_10_padding --cell_count 10
+python cell_extraction.py --wsi ../data/Xenium/lung_cancer_sample2/Xenium_V1_humanLung_Cancer_FFPE_he_image.ome.tif--mask ../data/Xenium/lung_cancer_sample2/cells.zarr.zip --output ../data/xenium_lung_sample1_10_padding --cell_count 10
+python cell_extraction.py --wsi ../data/Xenium/lung_cancer_sample2/Xenium_V1_humanLung_Cancer_FFPE_he_image.ome.tif --mask ../data/Xenium/lung_cancer_sample2/cells.zarr.zip --output ../data/xenium_lung_sample2_0_padding --cell_count 0
+python cell_extraction.py --wsi ../data/Xenium/lung_cancer_sample2/Xenium_V1_humanLung_Cancer_FFPE_he_image.ome.tif --mask ../data/Xenium/lung_cancer_sample2/cells.zarr.zip --output ../data/xenium_lung_sample2_10_padding --cell_count 10
