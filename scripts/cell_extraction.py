@@ -75,10 +75,12 @@ def load_image(wsi_path):
 
     return whole_slide_image
 
-def process_cells(wsi_path, zarr_path, output_dir, cell_count=10, plot_mask=False):
+def process_cells(wsi_path, zarr_path, output_dir, cell_count=10, plot_mask=False, padding=False):
     print('Starting cell extraction process...')
     cells = zarr.open(zarr_path, mode='r')
+    print(f"Loaded cells from {zarr_path}.")
     whole_slide_image = load_image(wsi_path)
+    print(f"Loaded whole slide image from {wsi_path}.")
     cell_masks = cells['masks'][1][:]
     if cell_masks.ndim != 2:
         raise ValueError(f"Expected cell_masks to be 2D, but got {cell_masks.ndim}D")
@@ -101,25 +103,34 @@ def process_cells(wsi_path, zarr_path, output_dir, cell_count=10, plot_mask=Fals
             csv_file.flush()
         else:
             error_count += 1
+    
+    print(f"Processed {len(props)} cells.")
+    print(f"Maximum image size: {max_size}x{max_size}")
 
     csv_file.close()
+    # Apply padding and resizing to the images, its mandatory for the ViT based models
+    if padding:
+        print("Applying padding and resizing to the images...")
+        # Round max_size up to the nearest multiple of 24
+        max_size = (max_size + 23) // 24 * 24
 
-    # Round max_size up to the nearest multiple of 24
-    max_size = (max_size + 23) // 24 * 24
+        # Padding and resizing images
+        for img_name in os.listdir(output_dir):
+            if img_name.endswith('.png'):
+                img_path = os.path.join(output_dir, img_name)
+                img = Image.open(img_path)
+                padded_img = Image.new('RGB', (max_size, max_size), (0, 0, 0))
+                padded_img.paste(img, ((max_size - img.width) // 2, (max_size - img.height) // 2))
+                resized_img = padded_img.resize((24, 24), Image.Resampling.LANCZOS)
+                resized_img.save(img_path) 
+        
 
-    # Padding and resizing images
-    for img_name in os.listdir(output_dir):
-        if img_name.endswith('.png'):
-            img_path = os.path.join(output_dir, img_name)
-            img = Image.open(img_path)
-            padded_img = Image.new('RGB', (max_size, max_size), (0, 0, 0))
-            padded_img.paste(img, ((max_size - img.width) // 2, (max_size - img.height) // 2))
-            resized_img = padded_img.resize((24, 24), Image.ANTIALIAS)
-            resized_img.save(img_path)
+        print(f"All images have been padded to {max_size}x{max_size} and resized to 24x24.")
+    else:
+        print("Padding was not applied to the images.")
 
     print(f"All cell images have been saved and neighbor information has been written to {os.path.join(output_dir, 'cell_neighbors.csv')}.")
     print(f"Number of cells with errors: {error_count}")
-    print(f"All images have been padded to {max_size}x{max_size} and resized to 24x24.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process WSI and zarr files to extract cell images and neighbors.")
@@ -128,7 +139,8 @@ if __name__ == "__main__":
     parser.add_argument('--output', type=str, help='Output directory to save processed images and CSV.')
     parser.add_argument('--cell_count', type=int, default=10, help='Number of neighboring cells to include. Default is 10.')
     parser.add_argument('--plot_mask', action='store_true', help='Whether to plot and save masks on the cell images.')
+    parser.add_argument('--padding', action='store_true', help='Whether to apply padding and resizing to the images.')
     
     args = parser.parse_args()
     
-    process_cells(args.wsi, args.mask, args.output, cell_count=args.cell_count, plot_mask=args.plot_mask)
+    process_cells(args.wsi, args.mask, args.output, cell_count=args.cell_count, plot_mask=args.plot_mask, padding=args.padding)
