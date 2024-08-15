@@ -22,6 +22,7 @@ def get_neighbors(props, cell_id, cell_masks, max_neighbors=10):
     return neighbor_ids[:max_neighbors]
 
 def process_cell(cell_id, props, cell_masks, wsi_width, wsi_height, whole_slide_image, output_dir, cell_count, plot_mask, max_size):
+    print(f"Processing cell {cell_id}...")
     cell_prop = props[cell_id]
     neighbor_ids = get_neighbors(props, cell_id, cell_masks, max_neighbors=cell_count)
     

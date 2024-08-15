@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name train_img2trans 
+#SBATCH --job-name create_hdf5 
 
 # Name of the SLURM partition that this job should run on.
-#SBATCH -p GPUv100s    # partition (queue)
+#SBATCH -p 512GB    # partition (queue)
 # Number of nodes required to run this job
 #SBATCH -N 1
 
@@ -16,5 +16,5 @@
 
 module load python/3.8.x-anaconda
 conda activate scGPT
-cd /archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript
-python train.py
+cd /archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript/scripts
+python create_hdf5.py
