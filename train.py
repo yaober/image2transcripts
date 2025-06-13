@@ -1,163 +1,160 @@
-# %%
 import os
 import torch
-import h5py
-import numpy as np
-
-import torch
-from torch.utils.data import Dataset, DataLoader
-from pathlib import Path
-from tqdm import tqdm
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader, random_split
+from torchvision import transforms
+from torchvision.models.vision_transformer import vit_b_16
+from PIL import Image
+import scanpy as sc
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
 
-# %%
-import h5py
-import torch
-from torch.utils.data import Dataset
+# Set working directory
+os.chdir("/archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript")
 
-class CLIPDataset(Dataset):
-    def __init__(self, hdf5_file):
-        self.file = h5py.File(hdf5_file, 'r')
-        self.cell_embeddings = self.file['cell_embeddings']
-        self.image_embeddings = self.file['image_embeddings']
+# Custom dataset for Xenium spatial transcriptomics
+class XeniumCellDataset(Dataset):
+    def __init__(self, gene_expr_dir, image_dir, transform=None):
+        self.gene_expr_dir = gene_expr_dir
+        self.image_dir = image_dir
+        self.transform = transform or transforms.ToTensor()
+        self.data_pairs = []
+        self.shared_genes = None
+        self._prepare_data()
+
+    def _prepare_data(self):
+        expr_files = [f for f in os.listdir(self.gene_expr_dir) if f.endswith('.h5ad')]
+        shared_genes = None
+        temp_storage = []
+
+        # First pass: find shared genes across all panels
+        for fname in tqdm(expr_files, desc="Finding shared genes"):
+            adata = sc.read_h5ad(os.path.join(self.gene_expr_dir, fname))
+            genes = set(adata.var_names)
+            shared_genes = genes if shared_genes is None else shared_genes & genes
+            temp_storage.append((fname, adata))
+
+        self.shared_genes = sorted(list(shared_genes))
+        print(f"Shared genes found: {len(self.shared_genes)}")
+
+        # Second pass: match image paths to gene expression vectors
+        for fname, adata in tqdm(temp_storage, desc="Collecting image-gene pairs"):
+            img_folder = os.path.join(self.image_dir, fname.replace(".h5ad", ""))
+            if not os.path.isdir(img_folder):
+                continue
+            adata = adata[:, self.shared_genes]
+            for cell_id in adata.obs.index:
+                img_path = os.path.join(img_folder, f"{cell_id}.png")
+                if os.path.exists(img_path):
+                    expr_vector = adata[cell_id].X.toarray().flatten() if hasattr(adata[cell_id].X, "toarray") else adata[cell_id].X.flatten()
+                    self.data_pairs.append((img_path, expr_vector))
 
     def __len__(self):
-        return len(self.cell_embeddings)
+        return len(self.data_pairs)
 
     def __getitem__(self, idx):
-        cell_emb = torch.tensor(self.cell_embeddings[idx], dtype=torch.float32)
-        image_emb = torch.tensor(self.image_embeddings[idx], dtype=torch.float32)
-        
-        cell_emb = cell_emb.squeeze()
-        image_emb = image_emb.squeeze()
-        
-        assert cell_emb.shape == image_emb.shape, f"Shape mismatch: Cell {cell_emb.shape}, Image {image_emb.shape}"
-        
-        return image_emb, cell_emb 
+        img_path, expr_vector = self.data_pairs[idx]
+        image = Image.open(img_path).convert('RGB')
+        image = self.transform(image)
+        expr_tensor = torch.tensor(expr_vector, dtype=torch.float32)
+        return image, expr_tensor
 
-    def __del__(self):
-        self.file.close()
+# CLIP-style multimodal model
+class Image2Transcripts(nn.Module):
+    def __init__(self, num_genes, embed_dim=768):
+        super().__init__()
+        self.image_encoder = vit_b_16(pretrained=True)
+        self.image_encoder.heads = nn.Identity()  # Remove classification head
+        self.gene_encoder = nn.Sequential(
+            nn.Linear(num_genes, 512),
+            nn.ReLU(),
+            nn.Linear(512, embed_dim),
+        )
 
-# %%
-dataset = CLIPDataset('data/embeddings/clip_embeddings_test.h5')
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True, num_workers=4)
+    def forward(self, image, gene):
+        image_embed = self.image_encoder(image)
+        gene_embed = self.gene_encoder(gene)
+        return image_embed, gene_embed
 
-# %%
+# CLIP loss: symmetric cross-entropy between image ↔ gene embeddings
+def clip_loss(image_features, gene_features, temperature=0.07):
+    image_features = F.normalize(image_features, dim=-1)
+    gene_features = F.normalize(gene_features, dim=-1)
+    logits_image = image_features @ gene_features.T / temperature
+    logits_gene = gene_features @ image_features.T / temperature
+    labels = torch.arange(image_features.size(0), device=image_features.device)
+    loss_i = F.cross_entropy(logits_image, labels)
+    loss_g = F.cross_entropy(logits_gene, labels)
+    return (loss_i + loss_g) / 2
 
-class MLP(nn.Module):
-    def __init__(self, input_dim, hidden_dim, output_dim, dropout_rate=0.5):
-        super(MLP, self).__init__()
-        self.fc1 = nn.Linear(input_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, output_dim)
-        self.layer_norm1 = nn.LayerNorm(hidden_dim)
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(dropout_rate)
+# Resize input images to 224x224 for ViT
+def resize_to_224(tensor):
+    return F.interpolate(tensor, size=(224, 224), mode='bilinear', align_corners=False)
 
-    def forward(self, x):
-        x = self.layer_norm1(self.fc1(x))
-        x = self.relu(x)
-        x = self.dropout(x)
-        x = self.fc2(x)
-        return x
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"🖥️ Using device: {device}")
 
+# Load dataset and split into train/val sets
+dataset = XeniumCellDataset("data/gene_expression", "data/images")
+train_size = int(0.8 * len(dataset))
+val_size = len(dataset) - train_size
+train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, num_workers=8)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False, num_workers=8)
 
+# Initialize model and optimizer
+model = Image2Transcripts(num_genes=len(dataset.shared_genes)).to(device)
+optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+epochs = 30
+temperature = 0.07
+best_val_loss = float('inf')
 
-class CLIPModel(nn.Module):
-    def __init__(self, image_dim, gene_dim, hidden_dim, output_dim, dropout_rate=0.5):
-        super(CLIPModel, self).__init__()
-        self.image_mlp = MLP(image_dim, hidden_dim, output_dim, dropout_rate)
-        self.gene_mlp = MLP(gene_dim, hidden_dim, output_dim, dropout_rate)
-        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+# Prepare log file
+log_path = "train_log.csv"
+with open(log_path, "w") as f:
+    f.write("epoch,train_loss,val_loss\n")
 
-    def forward(self, image_features, gene_features):
-        image_embeddings = self.image_mlp(image_features)
-        gene_embeddings = self.gene_mlp(gene_features)
-
-        # Normalize embeddings
-        image_embeddings = F.normalize(image_embeddings, dim=-1)
-        gene_embeddings = F.normalize(gene_embeddings, dim=-1)
-
-        # Scaled pairwise cosine similarities
-        logit_scale = self.logit_scale.exp()
-        logits_per_image = logit_scale * image_embeddings @ gene_embeddings.t()
-        logits_per_gene = logits_per_image.t()
-
-        return logits_per_image, logits_per_gene
-
-class InfoNCELoss(nn.Module):
-    def __init__(self, temperature=0.07):
-        super(InfoNCELoss, self).__init__()
-        self.temperature = temperature
-
-    def forward(self, logits_per_image, logits_per_gene):
-        batch_size = logits_per_image.size(0)
-
-        targets = torch.arange(batch_size).long().to(logits_per_image.device)
-
-        loss_img = F.cross_entropy(logits_per_image / self.temperature, targets)
-        loss_gene = F.cross_entropy(logits_per_gene / self.temperature, targets)
-
-        return (loss_img + loss_gene) / 2
-
-
-# %%
-def train_clip(model, dataloader, optimizer, device, temperature=0.07):
-    model.to(device)
+# Training loop
+for epoch in range(1, epochs + 1):
     model.train()
-    criterion = InfoNCELoss(temperature)
-    total_loss = 0
-    num_batches = len(dataloader)
-
-    progress_bar = tqdm(dataloader, total=num_batches, desc="Training")
-
-    for image_batch, gene_batch in progress_bar:
-        image_batch = image_batch.to(device)
-        gene_batch = gene_batch.to(device)
-
+    total_train_loss = 0
+    for batch_images, batch_genes in tqdm(train_loader, desc=f"Epoch {epoch} [Train]"):
+        batch_images = resize_to_224(batch_images.to(device))
+        batch_genes = batch_genes.to(device)
+        image_embed, gene_embed = model(batch_images, batch_genes)
+        loss = clip_loss(image_embed, gene_embed, temperature)
         optimizer.zero_grad()
-        logits_per_image, logits_per_gene = model(image_batch, gene_batch)
-        loss = criterion(logits_per_image, logits_per_gene)
         loss.backward()
         optimizer.step()
+        total_train_loss += loss.item()
 
-        total_loss += loss.item()
+    avg_train_loss = total_train_loss / len(train_loader)
 
-        progress_bar.set_postfix({"Loss": f"{loss.item():.4f}"})
+    # Validation
+    model.eval()
+    total_val_loss = 0
+    with torch.no_grad():
+        for batch_images, batch_genes in tqdm(val_loader, desc=f"Epoch {epoch} [Val]"):
+            batch_images = resize_to_224(batch_images.to(device))
+            batch_genes = batch_genes.to(device)
+            image_embed, gene_embed = model(batch_images, batch_genes)
+            loss = clip_loss(image_embed, gene_embed, temperature)
+            total_val_loss += loss.item()
 
-    average_loss = total_loss / num_batches
-    progress_bar.set_postfix({"Avg Loss": f"{average_loss:.4f}"})
-    progress_bar.close()
+    avg_val_loss = total_val_loss / len(val_loader)
 
-    return average_loss
+    # Save to log file
+    with open(log_path, "a") as f:
+        f.write(f"{epoch},{avg_train_loss:.4f},{avg_val_loss:.4f}\n")
 
-# %%
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print(f"[Epoch {epoch}] Train Loss: {avg_train_loss:.4f} | Val Loss: {avg_val_loss:.4f}")
 
-# %%
-
-image_dim = 512 
-gene_dim = 512 
-hidden_dim = 32
-output_dim = 128
-
-model = CLIPModel(image_dim, gene_dim, hidden_dim, output_dim).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-
-
-
-# %%
-from torchsummary import summary
-summary(model, [(image_dim,), (gene_dim,)])
-
-# %%
-
-num_epochs = 100
-for epoch in range(num_epochs):
-    loss = train_clip(model, dataloader, optimizer, device)
-    print(f"Epoch {epoch+1}/{num_epochs}, Loss: {loss:.4f}")
-
-# %%
-
-
+    # Save best model checkpoint
+    if avg_val_loss < best_val_loss:
+        best_val_loss = avg_val_loss
+        torch.save(model.state_dict(), "best_model.pt")
+        print("✅ Best model updated!")
 

@@ -14,9 +14,9 @@
 #SBATCH --mail-type ALL
 #SBATCH --mail-user jia.yao@utsouthwestern.edu
 module load python/3.8.x-anaconda
-conda activate image2transcripts
-cd /archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript
-python -u cell_image_extract.py
+source activate image2transcripts
+cd /archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript/colon
+python -u crop_patch.py
 
 #python -u summarize_tme_features.py --model_res_path ./test_lung --output_dir ./test_output_tme_gpu --n_patches 100 --patch_size 512 --score_thresh 10 --scale_factor 16 --save_images --save_nuclei
 

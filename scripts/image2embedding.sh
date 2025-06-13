@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name xenium_brca_0 
+#SBATCH --job-name colon_cancer 
 
 # Name of the SLURM partition that this job should run on.
 #SBATCH -p 512GB    # partition (queue)
@@ -8,22 +8,19 @@
 
 #SBATCH -t 100-23:0:00
 
-#SBATCH -o job_%j_xenium_brca_0.out
+#SBATCH -o job_%j_colon_cancer_image2embedding.out
 #SBATCH -e job_%j.err
 
 #SBATCH --mail-type ALL
 #SBATCH --mail-user jia.yao@utsouthwestern.edu
+source activate CONCH
 
-module load python/3.8.x-anaconda
-conda activate CONCH
 cd /archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript/scripts
-python image2embedding.py --image_path ../data/xenium_brca_rep1_0_padding --output_path ../data/image_embeddings/xenium_brca_rep1_0_padding
-python image2embedding.py --image_path ../data/xenium_brca_rep1_10_padding --output_path ../data/image_embeddings/xenium_brca_rep1_10_padding
-python image2embedding.py --image_path ../data/xenium_brca_rep2_0_padding --output_path ../data/image_embeddings/xenium_brca_rep2_0_padding
-python image2embedding.py --image_path ../data/xenium_brca_rep2_10_padding --output_path ../data/image_embeddings/xenium_brca_rep2_10_padding
-python image2embedding.py --image_path ../data/xenium_brca_sample2_0_padding --output_path ../data/image_embeddings/xenium_brca_sample2_0_padding
-python image2embedding.py --image_path ../data/xenium_brca_sample2_10_padding --output_path ../data/image_embeddings/xenium_brca_sample2_10_padding
-python image2embedding.py --image_path ../data/xenium_lung_sample1_0_padding --output_path ../data/image_embeddings/xenium_lung_sample1_0_padding
-python image2embedding.py --image_path ../data/xenium_lung_sample1_10_padding --output_path ../data/image_embeddings/xenium_lung_sample1_10_padding
-python image2embedding.py --image_path ../data/xenium_lung_sample2_0_padding --output_path ../data/image_embeddings/xenium_lung_sample2_0_padding
-python image2embedding.py --image_path ../data/xenium_lung_sample2_10_padding --output_path ../data/image_embeddings/xenium_lung_sample2_10_padding
+python image2embedding.py --image_path ../data/colon_cancer/output-XETG00248__0014303__CA432__20240306__011452 --output_path ../data/image_embeddings/output-XETG00248__0014303__CA432__20240306__011452
+python image2embedding.py --image_path ../data/colon_cancer/output-XETG00248__0014303__CA564__20240306__011452 --output_path ../data/image_embeddings/output-XETG00248__0014303__CA564__20240306__011452
+python image2embedding.py --image_path ../data/colon_cancer/output-XETG00248__0014303__NL432__20240306__011452 --output_path ../data/image_embeddings/output-XETG00248__0014303__NL432__20240306__011452
+python image2embedding.py --image_path ../data/colon_cancer/output-XETG00248__0014303__NL564__20240306__011452 --output_path ../data/image_embeddings/ooutput-XETG00248__0014303__NL564__20240306__011452
+python image2embedding.py --image_path ../data/colon_cancer/output-XETG00248__0014306__CA497__20240306__011452 --output_path ../data/image_embeddings/output-XETG00248__0014306__CA497__20240306__011452
+python image2embedding.py --image_path ../data/colon_cancer/output-XETG00248__0014306__CA560__20240306__011452 --output_path ../data/image_embeddings/output-XETG00248__0014306__CA560__20240306__011452
+python image2embedding.py --image_path ../data/colon_cancer/output-XETG00248__0014306__NL497__20240306__011452 --output_path ../data/image_embeddings/output-XETG00248__0014306__NL497__20240306__011452
+python image2embedding.py --image_path ../data/colon_cancer/output-XETG00248__0014306__NL560__20240306__011452 --output_path ../data/image_embeddings/output-XETG00248__0014306__NL560__20240306__011452
