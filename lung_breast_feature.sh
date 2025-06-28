@@ -15,6 +15,7 @@
 #SBATCH --mail-user jia.yao@utsouthwestern.edu
 module load python/3.8.x-anaconda
 source activate image2transcripts
+export CUDA_VISIBLE_DEVICES=0
 cd /archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript/colon
 python -u crop_patch.py
 

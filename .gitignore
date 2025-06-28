@@ -6,3 +6,5 @@ data/*
 ckpt/*
 output-*
 colon/*
+*.pt
+*.log

@@ -2,13 +2,13 @@
 #SBATCH --job-name train_img2trans 
 
 # Name of the SLURM partition that this job should run on.
-#SBATCH -p GPU4v100    # partition (queue)
+#SBATCH -p GPUA100    # partition (queue)
 # Number of nodes required to run this job
 #SBATCH -N 1
 
 #SBATCH -t 100-23:0:00
 
-#SBATCH -o job_%j_train.out
+#SBATCH -o job_%j_train_188.out
 #SBATCH -e job_%j.err
 
 #SBATCH --mail-type ALL
@@ -16,6 +16,9 @@
 
 module load gpu_prepare
 module load python/3.8.x-anaconda
-source activate image2transcripts
+
+source activate /archive/DPDS/Xiao_lab/shared/jia_yao/envs/image2transcripts
+export CUDA_VISIBLE_DEVICES=0
+export LD_LIBRARY_PATH=/archive/DPDS/Xiao_lab/shared/jia_yao/envs/image2transcripts/lib/python3.9/site-packages/nvidia/cudnn/lib:$LD_LIBRARY_PATH
 cd /archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript
-python train_ddp.py
+python train.py

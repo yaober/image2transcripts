@@ -14,7 +14,7 @@ from tqdm import tqdm
 # ------------------------
 # Setup
 # ------------------------
-os.makedirs("output_188_batch", exist_ok=True)
+os.makedirs("output_94_batch", exist_ok=True)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"🖥️ Using device: {device}")
@@ -106,7 +106,7 @@ def clip_loss(image_features, gene_features, temperature=0.07):
 # ------------------------
 # Data Preparation
 # ------------------------
-dataset = XeniumCellDataset("data/gene_expression", "data/images", transform=transform)
+dataset = XeniumCellDataset("data/gene_expression", "data/images_94", transform=transform)
 train_size = int(0.8 * len(dataset))
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
@@ -122,7 +122,7 @@ epochs = 30
 temperature = 0.07
 best_val_loss = float('inf')
 
-log_path = os.path.join("output_188_batch", "train_log.csv")
+log_path = os.path.join("output_94_batch", "train_log.csv")
 with open(log_path, "w") as f:
     f.write("epoch,train_loss,val_loss\n")
 
@@ -163,5 +163,5 @@ for epoch in range(1, epochs + 1):
 
     if avg_val_loss < best_val_loss:
         best_val_loss = avg_val_loss
-        torch.save(model.state_dict(), os.path.join("output_188_batch", "best_model.pt"))
+        torch.save(model.state_dict(), os.path.join("output_94_batch", "best_model.pt"))
         print("✅ Best model updated!")
