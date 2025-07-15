@@ -8,3 +8,4 @@ output-*
 colon/*
 *.pt
 *.log
+*.csv

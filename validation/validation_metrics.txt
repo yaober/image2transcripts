@@ -1,2 +1,2 @@
-top1_acc: 0.0115
-top5_acc: 0.0466
+top1_acc: 0.0099
+top5_acc: 0.0415
