@@ -1,3 +1,4 @@
+# ======================= main.py =======================
 import os
 import argparse
 import torch
@@ -5,15 +6,13 @@ import torch.distributed as dist
 import torch.multiprocessing as mp
 from pathlib import Path
 import numpy as np
-from torch.utils.data import Dataset, DataLoader, DistributedSampler, Subset, random_split
+from torch.utils.data import Dataset, DataLoader, DistributedSampler, Subset
 from torchvision.io import read_image
 import torchvision.transforms.v2 as T2
-from sklearn.model_selection import GroupKFold
 from sklearn.neighbors import NearestNeighbors
 from torch.amp import GradScaler, autocast
 import scanpy as sc
 import torch.nn.functional as F
-
 from tqdm import tqdm
 from scipy.stats import pearsonr
 
@@ -32,9 +31,6 @@ class XeniumCellDataset(Dataset):
 
     def _prepare(self):
         expr_files = sorted([p for p in self.gene_dir.iterdir() if p.suffix == ".h5ad"])
-        if not expr_files:
-            raise RuntimeError(f"No .h5ad files under {self.gene_dir}")
-
         tmp, shared = [], None
         for fp in expr_files:
             ad = sc.read_h5ad(fp)
@@ -57,8 +53,6 @@ class XeniumCellDataset(Dataset):
                     self.slide_ids.append(slide_id)
             expr_list.append(X); coord_list.append(coords)
 
-        if not expr_list:
-            raise RuntimeError("❌ No matching image–gene pairs found.")
         self.cell_exprs  = np.concatenate(expr_list, axis=0).astype(np.float32)
         self.cell_coords = np.concatenate(coord_list, axis=0).astype(np.float32)
 
@@ -73,10 +67,9 @@ class XeniumCellDataset(Dataset):
         img_fp, expr_idx = self.data_pairs[idx]
         img = self.transform(read_image(img_fp))
         feat = np.concatenate([self.cell_exprs[expr_idx], self.logfc_all[expr_idx]]).astype(np.float32)
-        #print(f"[debug] image shape = {img.shape}") 
         return img, torch.from_numpy(feat)
 
-# -------------------------- DDP utils --------------------------
+# -------------------------- DDP --------------------------
 def setup_ddp(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
     os.environ['MASTER_PORT'] = '12345'
@@ -86,10 +79,8 @@ def setup_ddp(rank, world_size):
 def cleanup_ddp():
     dist.destroy_process_group()
 
-# ------------------------ Training loop ------------------------
 def unwrap(model):
     return model.module if isinstance(model, torch.nn.parallel.DistributedDataParallel) else model
-
 
 def cosine_sim(x, y):
     return F.cosine_similarity(x, y, dim=-1).mean().item()
@@ -103,59 +94,47 @@ def pearson_corr(pred, target):
         if np.std(pred[i]) > 0 and np.std(target[i]) > 0
     ])
 
+# -------------------------- Train --------------------------
 def train(model, tr_ld, vl_ld, device, epochs, out_dir, rank, lr=3e-4,
           early_stop_patience=10, save_every=5):
     out_dir = Path(out_dir); out_dir.mkdir(parents=True, exist_ok=True)
     opt = torch.optim.AdamW(model.parameters(), lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(opt, T_0=10, T_mult=2)
-    scaler = GradScaler(init_scale=1024)
+    scaler = GradScaler()
 
     best = float("inf")
-    bad_epochs = 0 
+    bad_epochs = 0
     log_fp = out_dir / f"train_log_rank{rank}.csv"
     with open(log_fp, "w") as f:
         f.write("epoch,train,val,train_c,val_c,train_a,val_a,train_z,val_z,cos,pearson\n")
 
     for ep in range(1, epochs + 1):
         model.train(); met = np.zeros(4); sim, corr = [], []
-
         pbar = tqdm(tr_ld, desc=f"[GPU{rank}] Epoch {ep:02d}", ncols=100, disable=(rank != 0))
         for img, g in pbar:
-            img, g = img.to(device, non_blocking=True), g.to(device, non_blocking=True)
+            img, g = img.to(device), g.to(device)
             opt.zero_grad(set_to_none=True)
             with autocast(device_type='cuda'):
-                out = model(img, g)
+                i_emb, g_emb, pred_i, pred_g = model(img, g)
                 m = unwrap(model)
-                loss, c, a, z = full_loss(*out, g, m.t_img, m.t_gen)
-
+                loss, c, a, z = full_loss(i_emb, g_emb, pred_i, pred_g, g, m.t_img, m.t_gen)
             scaler.scale(loss).backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             scaler.step(opt); scaler.update()
-
             met += np.array([loss.item(), c, a, z])
-            sim.append(cosine_sim(out[0], out[1]))
-            corr.append(pearson_corr(out[2][0], g[:, :g.shape[1] // 2]))
-
-            pbar.set_postfix({
-                "loss": f"{loss.item():.3f}",
-                "contrast": f"{c:.3f}",
-                "align": f"{a:.3f}",
-                "zinb": f"{z:.3f}",
-            })
-
+            sim.append(cosine_sim(i_emb, g_emb))
+            corr.append(pearson_corr(pred_i, g[:, :g.shape[1] // 2]))
         scheduler.step()
 
         model.eval(); met_v = np.zeros(4); sim_v, corr_v = [], []
         with torch.no_grad(), autocast(device_type='cuda'):
             for img, g in vl_ld:
-                img, g = img.to(device, non_blocking=True), g.to(device, non_blocking=True)
-                out = model(img, g)
+                img, g = img.to(device), g.to(device)
+                i_emb, g_emb, pred_i, pred_g = model(img, g)
                 m = unwrap(model)
-                loss, c, a, z = full_loss(*out, g, m.t_img, m.t_gen)
-
+                loss, c, a, z = full_loss(i_emb, g_emb, pred_i, pred_g, g, m.t_img, m.t_gen)
                 met_v += np.array([loss.item(), c, a, z])
-                sim_v.append(cosine_sim(out[0], out[1]))
-                corr_v.append(pearson_corr(out[2][0], g[:, :g.shape[1] // 2]))
+                sim_v.append(cosine_sim(i_emb, g_emb))
+                corr_v.append(pearson_corr(pred_i, g[:, :g.shape[1] // 2]))
 
         met /= len(tr_ld); met_v /= len(vl_ld)
         sim_m, sim_mv = np.mean(sim), np.mean(sim_v)
@@ -173,27 +152,23 @@ def train(model, tr_ld, vl_ld, device, epochs, out_dir, rank, lr=3e-4,
                   f"C {met[1]:.3f}/{met_v[1]:.3f}  A {met[2]:.3f}/{met_v[2]:.3f}  "
                   f"Z {met[3]:.3f}/{met_v[3]:.3f}  COS {sim_mv:.3f}  R {corr_mv:.3f}")
 
-            # 🧠 Save best model
             if met_v[0] < best:
                 best = met_v[0]
                 bad_epochs = 0
                 torch.save(unwrap(model).state_dict(), out_dir / "best_model.pt")
-                print("   ✔️  saved best model")
+                print("   ✔️ saved best model")
             else:
                 bad_epochs += 1
                 print(f"   ❌ no improvement for {bad_epochs} epoch(s)")
 
-            # 💾 Save intermediate checkpoint
             if ep % save_every == 0:
                 torch.save(unwrap(model).state_dict(), out_dir / f"epoch_{ep:03d}.pt")
 
-            # ⛔️ Early stopping
             if bad_epochs >= early_stop_patience:
-                print(f"🛑 Early stopping triggered at epoch {ep}")
+                print(f"🛑 Early stopping at epoch {ep}")
                 break
 
-
-# --------------------------- Main DDP ---------------------------
+# -------------------------- DDP Entry --------------------------
 def main_ddp(rank, world_size, args):
     setup_ddp(rank, world_size)
     tfm = T2.Compose([
@@ -208,7 +183,6 @@ def main_ddp(rank, world_size, args):
     sampler = DistributedSampler(ds, num_replicas=world_size, rank=rank, shuffle=True)
     tr_ld = DataLoader(ds, batch_size=args.batch, sampler=sampler, num_workers=4, pin_memory=True)
 
-    # use first 20% of dataset for validation (shared across ranks)
     val_len = int(0.2 * len(ds))
     vl_ds = Subset(ds, list(range(val_len)))
     vl_ld = DataLoader(vl_ds, batch_size=args.batch, shuffle=False, num_workers=4, pin_memory=True)
@@ -217,16 +191,15 @@ def main_ddp(rank, world_size, args):
     model = Image2Transcripts(gene_dim=len(ds.shared_genes)).to(device)
     model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[rank])
-
     train(model, tr_ld, vl_ld, device, args.epochs, args.out_dir, rank)
     cleanup_ddp()
 
-# --------------------------- CLI Entry ---------------------------
+# -------------------------- CLI --------------------------
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--gene_dir", required=True)
     ap.add_argument("--img_dir", required=True)
-    ap.add_argument("--out_dir", default="output_zinb")
+    ap.add_argument("--out_dir", default="output_mse")
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--epochs", type=int, default=30)
     ap.add_argument("--gpus", type=int, default=torch.cuda.device_count())
