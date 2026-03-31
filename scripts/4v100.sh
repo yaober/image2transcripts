@@ -2,13 +2,13 @@
 #SBATCH --job-name train_model2_img2trans 
 
 # Name of the SLURM partition that this job should run on.
-#SBATCH -p GPU4v100    # partition (queue)
+#SBATCH -p  GPU4A100    # partition (queue)
 # Number of nodes required to run this job
 #SBATCH -N 1
 
 #SBATCH -t 100-23:0:00
 
-#SBATCH -o job_%j_train_94.out
+#SBATCH -o job_%j_train_128.out
 #SBATCH -e job_%j.err
 
 #SBATCH --mail-type ALL
@@ -35,7 +35,7 @@ cd /archive/DPDS/Xiao_lab/shared/jia_yao/Image2Transcript/model
 python main.py \
     --gene_dir ../data/gene_expression/ \
     --img_dir ../data/images/ \
-    --out_dir ../output_improved \
+    --out_dir ../output_128 \
     --batch 128 \
     --epochs 100 \
     --lr_backbone 1e-5 \
