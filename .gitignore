@@ -1,11 +1,29 @@
-pretrained_models/*
+# Data
+data/
+colon/
 *.h5ad
-data/*
+
+# Model weights & checkpoints
+*.pt
+*.pth
+*.bin
+ckpt/
+pretrained_models/
+output*/
+
+# Logs & job outputs
 *.out
 *.err
-ckpt/*
-output-*
-colon/*
-*.pt
 *.log
 *.csv
+!gene_signatures/*.csv
+
+# Python
+__pycache__/
+*.pyc
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
