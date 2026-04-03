@@ -1,6 +1,8 @@
 import os
 import math
+import random
 import argparse
+from functools import partial
 from pathlib import Path
 import numpy as np
 import torch
@@ -128,6 +130,21 @@ def pearson_corr(pred, target):
     cost = torch.sum(vx * vy, dim=1)
     norm = torch.sqrt(torch.sum(vx ** 2, dim=1) * torch.sum(vy ** 2, dim=1))
     return torch.mean(cost / (norm + 1e-8)).item()
+
+
+def set_seed(seed, rank=0):
+    full_seed = seed + rank
+    random.seed(full_seed)
+    np.random.seed(full_seed)
+    torch.manual_seed(full_seed)
+    torch.cuda.manual_seed_all(full_seed)
+
+
+def seed_worker(worker_id, base_seed, rank):
+    worker_seed = base_seed + rank * 1000 + worker_id
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+    torch.manual_seed(worker_seed)
 
 
 def build_optimizer(model, lr_backbone, lr_head, weight_decay):
@@ -273,6 +290,7 @@ def train(model, tr_ld, vl_ld, device, args, rank, sampler=None):
 # -------------------------- Main --------------------------
 def main_ddp(rank, world_size, args):
     setup_ddp(rank, world_size)
+    set_seed(args.seed, rank)
 
     train_tfm = T2.Compose([
         T2.RandomAffine(degrees=15, translate=(0.1, 0.1), scale=(0.85, 1.15)),
@@ -291,7 +309,7 @@ def main_ddp(rank, world_size, args):
 
     slide_ids = np.array(ds.slide_ids_per_cell)
     unique_slides = np.unique(slide_ids)
-    rng = np.random.RandomState(42)
+    rng = np.random.RandomState(args.seed)
     rng.shuffle(unique_slides)
 
     split_idx = int(0.8 * len(unique_slides))
@@ -302,6 +320,7 @@ def main_ddp(rank, world_size, args):
     val_idx = [i for i, s in enumerate(slide_ids) if s in val_slides]
 
     if rank == 0:
+        print(f"Seed: {args.seed}")
         print(f"Train Slides: {len(train_slides)} ({len(train_idx)} cells)")
         print(f"Val Slides:   {len(val_slides)} ({len(val_idx)} cells)")
 
@@ -319,12 +338,21 @@ def main_ddp(rank, world_size, args):
     )
     val_ds_clean = Subset(ds_val_clean, val_idx)
 
-    train_sampler = DistributedSampler(train_ds, num_replicas=world_size, rank=rank, shuffle=True)
+    worker_init = partial(seed_worker, base_seed=args.seed, rank=rank)
+    train_sampler = DistributedSampler(
+        train_ds,
+        num_replicas=world_size,
+        rank=rank,
+        shuffle=True,
+        seed=args.seed,
+    )
 
     tr_ld = DataLoader(train_ds, batch_size=args.batch, sampler=train_sampler,
-                       num_workers=4, pin_memory=True, drop_last=True)
+                       num_workers=4, pin_memory=True, drop_last=True,
+                       worker_init_fn=worker_init)
     vl_ld = DataLoader(val_ds_clean, batch_size=args.batch, shuffle=False,
-                       num_workers=4, pin_memory=True)
+                       num_workers=4, pin_memory=True,
+                       worker_init_fn=worker_init)
 
     device = torch.device(f"cuda:{rank}")
 
@@ -367,6 +395,8 @@ if __name__ == "__main__":
                     help="Fraction of genes randomly masked during training")
     ap.add_argument("--patience", type=int, default=15,
                     help="Early stopping patience (epochs without val loss improvement)")
+    ap.add_argument("--seed", type=int, default=42,
+                    help="Random seed for slide split, sampling, and training")
 
     args = ap.parse_args()
     mp.spawn(main_ddp, args=(args.gpus, args), nprocs=args.gpus, join=True)
