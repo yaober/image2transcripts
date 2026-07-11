@@ -1,33 +1,90 @@
-# Data
+# =============================================================================
+# Image2Transcript — .gitignore
+#
+# Goal: keep the tracked tree limited to the *core, reusable code* (model,
+# data-prep, training, eval) and small config/asset files. Everything that is
+# large, machine-generated, experiment-specific, internal, or benchmark-only
+# is ignored so the public repo stays clean and easy to use.
+# =============================================================================
+
+# ---- Raw data & large imaging assets ----------------------------------------
 data/
 colon/
 *.h5ad
+*.h5
+*.zarr
+*.svs
+*.tif
+*.tiff
+*.ome.tif
+*.ome.tiff
+*.npy
+*.npz
 
-# Model weights & checkpoints
+# ---- Model weights, embeddings & checkpoints --------------------------------
 *.pt
 *.pth
 *.bin
+*.ckpt
 ckpt/
 pretrained_models/
 output*/
 
-# Logs & job outputs
+# ---- Experiment outputs, logs & figures -------------------------------------
+runs/
+figs/
+logs/
+nohup.out
+run_local*.log
 *.out
 *.err
 *.log
+# Slurm job stdout/stderr dumps (job_<id>_*.out/err)
+job_*
 *.csv
+# keep the curated marker-gene signatures and any split manifests
 !gene_signatures/*.csv
+!splits/*.csv
 
-# Python
+# ---- Internal notes, manuscript & planning docs (not part of the release) ---
+CLAUDE.md
+docs/
+manuscript.md
+manuscprits.md
+*.draft.md
+
+# ---- External benchmark suites & benchmark/ablation-only scripts ------------
+benchmark/
+scripts/hest_bench/
+scripts/figures/
+scripts/analyze_predictions.py
+scripts/generate_framework_figure.py
+scripts/baseline_*.py
+scripts/foundation_models.py
+scripts/extract_foundation_features_xenium.py
+scripts/tcga_*.py
+scripts/tpda_*.py
+scripts/run_eval_suite.sh
+scripts/setup_scellst_env.sh
+# experiment/sweep launchers; the plain scripts/4v100.sh is kept
+scripts/4v100_*.sh
+
+# ---- Dev / analysis notebooks (keep only predict.ipynb as the usage demo) ---
+image2transcripts.ipynb
+validation.ipynb
+
+# ---- Scratch / editor / OS cruft --------------------------------------------
+Untitled
+**/Untitled
+.codex
+.DS_Store
+.idea/
+.vscode/
+
+# ---- Python -----------------------------------------------------------------
 __pycache__/
 *.pyc
-
-# Jupyter
+*.pyo
 .ipynb_checkpoints/
-
-# OS
-.DS_Store
-.codex
-benchmark
-docs
-.gitignore
+.pytest_cache/
+*.egg-info/

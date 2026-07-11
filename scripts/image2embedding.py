@@ -6,7 +6,10 @@ from PIL import Image
 import argparse
 
 def main(image_path, output_path):
-    model, preprocess = create_model_from_pretrained('conch_ViT-B-16', "hf_hub:MahmoodLab/conch", hf_auth_token="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")
+    # CONCH is a gated model on HuggingFace; provide your own token via the
+    # HF_TOKEN environment variable (do NOT hardcode tokens in source).
+    hf_token = os.environ.get("HF_TOKEN")
+    model, preprocess = create_model_from_pretrained('conch_ViT-B-16', "hf_hub:MahmoodLab/conch", hf_auth_token=hf_token)
 
     # Ensure the output directory exists
     os.makedirs(output_path, exist_ok=True)

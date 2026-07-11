@@ -1,0 +1,42 @@
+{
+  "name": "xenium_slide_split_v1",
+  "description": "Leakage-safer slide split for Image2Transcript. All slides sharing the same second '__' token are kept in the same split. Exact matched slide counts: 20 train / 4 val / 5 test.",
+  "grouping_rule": "Keep all slides with the same sample-group token (for example 0010314 or 0022521) in the same split.",
+  "created_on": "2026-04-10",
+  "matched_slide_count": 29,
+  "train": [
+    "output-XETG00248__0010314__CA518C__20240411__220137",
+    "output-XETG00248__0010314__CA539P__20240411__220137",
+    "output-XETG00248__0010314__NL518C__20240411__220137",
+    "output-XETG00248__0010314__NL539P__20240411__220137",
+    "output-XETG00248__0014261__CA479__20240521__220640",
+    "output-XETG00248__0014261__CA506__20240521__220640",
+    "output-XETG00248__0014261__NL479__20240521__220640",
+    "output-XETG00248__0014261__NL506__20240521__220640",
+    "output-XETG00248__0014303__CA432__20240306__011452",
+    "output-XETG00248__0014303__CA564__20240306__011452",
+    "output-XETG00248__0014303__NL432__20240306__011452",
+    "output-XETG00248__0014303__NL564__20240306__011452",
+    "output-XETG00248__0014306__CA497__20240306__011452",
+    "output-XETG00248__0014306__CA560__20240306__011452",
+    "output-XETG00248__0014306__NL497__20240306__011452",
+    "output-XETG00248__0014306__NL560__20240306__011452",
+    "output-XETG00248__0022509__CA430__20240430__215714",
+    "output-XETG00248__0022509__CA517__20240430__215714",
+    "output-XETG00248__0022509__NL430__20240430__215714",
+    "output-XETG00248__0022509__NL517__20240430__215714"
+  ],
+  "val": [
+    "output-XETG00248__0022521__CA425__20240430__215714",
+    "output-XETG00248__0022521__CA441__20240430__215714",
+    "output-XETG00248__0022521__NL425__20240430__215714",
+    "output-XETG00248__0022521__NL441__20240430__215714"
+  ],
+  "test": [
+    "output-XETG00248__0010315__CA551C__20240411__220137",
+    "output-XETG00248__0010315__NL551C__20240411__220137",
+    "output-XETG00248__0014258__CA448__20240521__220640",
+    "output-XETG00248__0014258__NL448__20240521__220640",
+    "output-XETG00248__0014258__NL493__20240521__220640"
+  ]
+}
