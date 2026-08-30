@@ -46,6 +46,12 @@ job_*
 !gene_signatures/*.csv
 !splits/*.csv
 
+# ---- Result artifacts are NOT redistributed ---------------------------------
+# Prediction dumps, checkpoints, per-run analysis outputs, rendered figures and
+# training logs stay out of the public tree (`runs/`, `figs/`, `*.csv`, `*.log`
+# above). The released code regenerates all of them; the artifacts themselves
+# are available from the corresponding author on request.
+
 # ---- Internal notes, manuscript & planning docs (not part of the release) ---
 CLAUDE.md
 docs/
@@ -53,21 +59,27 @@ manuscript.md
 manuscprits.md
 *.draft.md
 
-# ---- External benchmark suites & benchmark/ablation-only scripts ------------
+# ---- External benchmark suites (third-party clones) -------------------------
+# GHIST / HEST / SciSt / sCellST are upstream repositories cloned locally to
+# produce the Table 5 comparison. They carry their own licences and their own
+# git histories, so we do not redistribute them here; scripts/hest_bench/
+# documents the exact upstream commits and how to obtain them.
 benchmark/
-scripts/hest_bench/
-scripts/figures/
-scripts/analyze_predictions.py
-scripts/generate_framework_figure.py
-scripts/baseline_*.py
-scripts/foundation_models.py
-scripts/extract_foundation_features_xenium.py
-scripts/tcga_*.py
+
+# ---- Analysis, figure & experiment entrypoints ------------------------------
+# These are the entrypoints named in the STAI-X reproducibility checklist
+# (analysis, figures, TCGA-COAD, HEST-Bench, foundation-model baselines).
+# They are part of the public release -- do NOT re-ignore them.
+scripts/hest_bench/*.log
+scripts/hest_bench/**/__pycache__/
+
+# Unrelated work-in-progress (tPdA single-cell-resolution study, not in the
+# submitted paper) and cluster-local environment bootstrap.
 scripts/tpda_*.py
-scripts/run_eval_suite.sh
+scripts/4v100_tpda_*.sh
+scripts/1gpu_tpda_*.sh
 scripts/setup_scellst_env.sh
-# experiment/sweep launchers; the plain scripts/4v100.sh is kept
-scripts/4v100_*.sh
+scripts/4v100_scellst.sh
 
 # ---- Dev / analysis notebooks (keep only predict.ipynb as the usage demo) ---
 image2transcripts.ipynb
